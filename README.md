@@ -13,15 +13,11 @@ Features
 
    Student adds skills they are expert in.
 
-   Example: Java, React, Graphic Designing, Quran Recitation, Arabic, etc.
-
-   Adds skill description and expertise level.
+   Example: Java, React, Graphic Designing, etc.
 
 3. Other students can view skills
 
     Students can see profiles and skills posted by others.
-
-    Example: Faizan is expert in Java.
 
 4. Student requests to learn
 
@@ -33,7 +29,6 @@ Features
 
    If accepted, both students can connect.
 
-   They can discuss teaching schedule and learning sessions.
 
 
 
