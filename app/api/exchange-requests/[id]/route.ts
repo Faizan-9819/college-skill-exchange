@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import ExchangeRequest from "@/model/ExchangeRequest";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const noCacheHeaders = {
+  "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+};
+
 // GET one request
 export async function GET(
   request: NextRequest,
@@ -13,22 +20,22 @@ export async function GET(
     const { id } = await params;
 
     const exchangeRequest = await ExchangeRequest.findById(id)
-      .populate("sender", "name email")
-      .populate("receiver", "name email")
-      .populate("skill", "name category level");
+      .populate("sender", "name email department year")
+      .populate("receiver", "name email department year")
+      .populate("skill", "name");
 
     if (!exchangeRequest) {
       return NextResponse.json(
         { message: "Exchange request not found" },
-        { status: 404 },
+        { status: 404, headers: noCacheHeaders },
       );
     }
 
-    return NextResponse.json(exchangeRequest);
+    return NextResponse.json(exchangeRequest, { headers: noCacheHeaders });
   } catch (error) {
     return NextResponse.json(
       { message: "Failed to fetch request", error },
-      { status: 500 },
+      { status: 500, headers: noCacheHeaders },
     );
   }
 }
@@ -55,15 +62,15 @@ export async function PUT(
     if (!exchangeRequest) {
       return NextResponse.json(
         { message: "Exchange request not found" },
-        { status: 404 },
+        { status: 404, headers: noCacheHeaders },
       );
     }
 
-    return NextResponse.json(exchangeRequest);
+    return NextResponse.json(exchangeRequest, { headers: noCacheHeaders });
   } catch (error) {
     return NextResponse.json(
       { message: "Failed to update request", error },
-      { status: 500 },
+      { status: 500, headers: noCacheHeaders },
     );
   }
 }
@@ -83,17 +90,20 @@ export async function DELETE(
     if (!exchangeRequest) {
       return NextResponse.json(
         { message: "Exchange request not found" },
-        { status: 404 },
+        { status: 404, headers: noCacheHeaders },
       );
     }
 
-    return NextResponse.json({
-      message: "Exchange request deleted successfully",
-    });
+    return NextResponse.json(
+      {
+        message: "Exchange request deleted successfully",
+      },
+      { headers: noCacheHeaders },
+    );
   } catch (error) {
     return NextResponse.json(
       { message: "Failed to delete request", error },
-      { status: 500 },
+      { status: 500, headers: noCacheHeaders },
     );
   }
 }

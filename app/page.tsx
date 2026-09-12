@@ -49,10 +49,30 @@ export default function Home() {
     skill: null,
     message: "",
   });
+  const [editSkillModal, setEditSkillModal] = useState<{
+    open: boolean;
+    id: string;
+    name: string;
+  }>({
+    open: false,
+    id: "",
+    name: "",
+  });
   const [notification, setNotification] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  // Broadcast helper for real-time cross-tab synchronization
+  const broadcastSync = (type: string) => {
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        const channel = new BroadcastChannel("skill_exchange_sync");
+        channel.postMessage({ type, timestamp: Date.now() });
+        channel.close();
+      }
+    } catch {}
+  };
 
   // Forms
   const [registerForm, setRegisterForm] = useState({
@@ -90,7 +110,10 @@ export default function Home() {
 
   const fetchSkills = async () => {
     try {
-      const response = await fetch("/api/skills");
+      const response = await fetch(`/api/skills?_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       const data = await response.json();
       if (Array.isArray(data)) {
         setSkills(data);
@@ -102,7 +125,10 @@ export default function Home() {
 
   const fetchExchangeRequests = async () => {
     try {
-      const response = await fetch("/api/exchange-requests");
+      const response = await fetch(`/api/exchange-requests?_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
       const data = await response.json();
       if (Array.isArray(data)) {
         setExchangeRequests(data);
@@ -125,6 +151,48 @@ export default function Home() {
     fetchUsers();
     fetchSkills();
     fetchExchangeRequests();
+
+    // Cross-tab real-time sync via BroadcastChannel
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        channel = new BroadcastChannel("skill_exchange_sync");
+        channel.onmessage = () => {
+          fetchExchangeRequests();
+          fetchSkills();
+        };
+      }
+    } catch {}
+
+    const handleActiveSync = () => {
+      fetchExchangeRequests();
+      fetchSkills();
+    };
+
+    window.addEventListener("focus", handleActiveSync);
+    document.addEventListener("visibilitychange", handleActiveSync);
+
+    // Live background polling (every 2.5s) for real-time updates without manual refresh
+    const pollTimer = setInterval(() => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState === "visible"
+      ) {
+        fetchExchangeRequests();
+        fetchSkills();
+      }
+    }, 2500);
+
+    return () => {
+      if (channel) {
+        try {
+          channel.close();
+        } catch {}
+      }
+      window.removeEventListener("focus", handleActiveSync);
+      document.removeEventListener("visibilitychange", handleActiveSync);
+      clearInterval(pollTimer);
+    };
   }, []);
 
   // Register user (only Full Name, Email, Password)
@@ -245,6 +313,7 @@ export default function Home() {
 
       setSkillForm({ name: "" });
       await fetchSkills();
+      broadcastSync("SKILL_ADDED");
       showToast("success", "Skill added successfully!");
     } catch (err: any) {
       console.error("Error adding skill:", err);
@@ -257,18 +326,71 @@ export default function Home() {
     }
   };
 
+  // Edit skill
+  const handleUpdateSkill = async () => {
+    if (!editSkillModal.id || !editSkillModal.name.trim()) {
+      showToast("error", "Skill name cannot be empty");
+      return;
+    }
+
+    const trimmedName = editSkillModal.name.trim();
+    const skillId = editSkillModal.id;
+
+    // Optimistically update local skills state for instant UI update
+    setSkills((prev) =>
+      prev.map((s) => (s._id === skillId ? { ...s, name: trimmedName } : s)),
+    );
+
+    setActionLoading(true);
+    try {
+      const response = await fetch(`/api/skills/${skillId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.message || "Failed to update skill");
+      }
+
+      const updatedSkill = await response.json();
+      if (updatedSkill?._id) {
+        setSkills((prev) =>
+          prev.map((s) => (s._id === skillId ? updatedSkill : s)),
+        );
+      }
+
+      broadcastSync("SKILL_UPDATED");
+      showToast("success", "Skill updated successfully!");
+      setEditSkillModal({ open: false, id: "", name: "" });
+    } catch (err: any) {
+      console.error("Error updating skill:", err);
+      showToast("error", err.message || "Failed to update skill");
+      await fetchSkills();
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Delete skill
   const deleteSkill = async (id: string) => {
     if (!confirm("Are you sure you want to remove this skill?")) return;
+    // Optimistically remove from skills
+    setSkills((prev) => prev.filter((s) => s._id !== id));
     try {
       const response = await fetch(`/api/skills/${id}`, {
         method: "DELETE",
       });
       if (response.ok) {
-        await fetchSkills();
+        broadcastSync("SKILL_DELETED");
         showToast("success", "Skill removed");
+      } else {
+        await fetchSkills();
+        showToast("error", "Failed to remove skill");
       }
     } catch {
+      await fetchSkills();
       showToast("error", "Failed to remove skill");
     }
   };
@@ -302,6 +424,7 @@ export default function Home() {
       );
       setConnectModal({ open: false, skill: null, message: "" });
       await fetchExchangeRequests();
+      broadcastSync("REQUEST_SENT");
     } catch {
       showToast("error", "Could not send exchange request");
     } finally {
@@ -314,6 +437,11 @@ export default function Home() {
     requestId: string,
     status: "Accepted" | "Rejected",
   ) => {
+    // Instant optimistic update: state changes with 0ms delay so no refresh is needed
+    setExchangeRequests((prev) =>
+      prev.map((r) => (r._id === requestId ? { ...r, status } : r)),
+    );
+
     setActionLoading(true);
     try {
       const response = await fetch(`/api/exchange-requests/${requestId}`, {
@@ -326,7 +454,15 @@ export default function Home() {
         throw new Error("Failed to update request status");
       }
 
-      await fetchExchangeRequests();
+      const updated = await response.json();
+      if (updated?._id) {
+        setExchangeRequests((prev) =>
+          prev.map((r) => (r._id === requestId ? updated : r)),
+        );
+      }
+
+      broadcastSync("REQUEST_STATUS_UPDATED");
+
       showToast(
         "success",
         status === "Accepted"
@@ -334,6 +470,7 @@ export default function Home() {
           : "Exchange request declined.",
       );
     } catch {
+      await fetchExchangeRequests();
       showToast("error", "Failed to update request status");
     } finally {
       setActionLoading(false);
@@ -343,6 +480,8 @@ export default function Home() {
   // Cancel sent exchange request
   const cancelExchangeRequest = async (requestId: string) => {
     if (!confirm("Are you sure you want to cancel this request?")) return;
+    // Optimistic removal
+    setExchangeRequests((prev) => prev.filter((r) => r._id !== requestId));
     setActionLoading(true);
     try {
       const response = await fetch(`/api/exchange-requests/${requestId}`, {
@@ -353,9 +492,10 @@ export default function Home() {
         throw new Error("Failed to cancel request");
       }
 
-      await fetchExchangeRequests();
+      broadcastSync("REQUEST_CANCELLED");
       showToast("success", "Exchange request cancelled");
     } catch {
+      await fetchExchangeRequests();
       showToast("error", "Failed to cancel request");
     } finally {
       setActionLoading(false);
@@ -1185,7 +1325,7 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {skill.user._id !== currentUser._id && (
+                      {skill.user?._id !== currentUser?._id ? (
                         <button
                           onClick={() =>
                             setConnectModal({
@@ -1197,6 +1337,19 @@ export default function Home() {
                           className="btn-primary text-xs py-2 px-4 mt-4 w-full"
                         >
                           🤝 Connect
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() =>
+                            setEditSkillModal({
+                              open: true,
+                              id: skill._id,
+                              name: skill.name,
+                            })
+                          }
+                          className="btn-secondary text-xs py-2 px-4 mt-4 w-full flex items-center justify-center gap-1.5"
+                        >
+                          ✏️ Edit Your Skill
                         </button>
                       )}
                     </div>
@@ -1602,25 +1755,55 @@ export default function Home() {
                             </p>
                           </div>
 
-                          <button
-                            onClick={() => deleteSkill(skill._id)}
-                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
-                            title="Remove Skill"
-                          >
-                            <svg
-                              className="w-4 h-4"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditSkillModal({
+                                  open: true,
+                                  id: skill._id,
+                                  name: skill.name,
+                                })
+                              }
+                              className="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                              title="Edit Skill"
                             >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth="2"
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                              />
-                            </svg>
-                          </button>
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                />
+                              </svg>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => deleteSkill(skill._id)}
+                              className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                              title="Remove Skill"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth="2"
+                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                              </svg>
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1741,20 +1924,35 @@ export default function Home() {
                         </div>
                       </div>
 
-                      {/* Connect Button */}
+                      {/* Connect / Edit Button */}
                       <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-end">
-                        <button
-                          onClick={() =>
-                            setConnectModal({
-                              open: true,
-                              skill: skill,
-                              message: `Hi ${skill.user.name}, I'm interested in learning ${skill.name} from you!`,
-                            })
-                          }
-                          className="btn-primary text-xs py-2 px-4 w-full"
-                        >
-                          🤝 Connect / Request Exchange
-                        </button>
+                        {skill.user?._id !== currentUser?._id ? (
+                          <button
+                            onClick={() =>
+                              setConnectModal({
+                                open: true,
+                                skill: skill,
+                                message: `Hi ${skill.user.name}, I'm interested in learning ${skill.name} from you!`,
+                              })
+                            }
+                            className="btn-primary text-xs py-2 px-4 w-full"
+                          >
+                            🤝 Connect / Request Exchange
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              setEditSkillModal({
+                                open: true,
+                                id: skill._id,
+                                name: skill.name,
+                              })
+                            }
+                            className="btn-secondary text-xs py-2 px-4 w-full flex items-center justify-center gap-1.5"
+                          >
+                            ✏️ Edit Your Skill
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1833,6 +2031,75 @@ export default function Home() {
                 {actionLoading ? "Sending..." : "Send Request"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Skill Modal */}
+      {editSkillModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 sm:p-8 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <h3 className="text-lg sm:text-xl font-bold text-slate-900 flex items-center gap-2.5">
+                <span>✏️</span> Edit Teaching Skill
+              </h3>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditSkillModal({ open: false, id: "", name: "" })
+                }
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleUpdateSkill();
+              }}
+              className="mt-5 space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Skill Name
+                </label>
+                <input
+                  type="text"
+                  value={editSkillModal.name}
+                  onChange={(e) =>
+                    setEditSkillModal({
+                      ...editSkillModal,
+                      name: e.target.value,
+                    })
+                  }
+                  placeholder="e.g., React, Python, Data Science"
+                  className="input-field"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditSkillModal({ open: false, id: "", name: "" })
+                  }
+                  className="btn-secondary text-xs py-2 px-4"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionLoading || !editSkillModal.name.trim()}
+                  className="btn-primary text-xs py-2 px-5"
+                >
+                  {actionLoading ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
