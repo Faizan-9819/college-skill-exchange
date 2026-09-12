@@ -20,26 +20,26 @@ Features
 
 2. Student posts their skills
 
-Student adds skills they are expert in.
+   Student adds skills they are expert in.
 
-Example: Java, React, Graphic Designing, Quran Recitation, Arabic, etc.
+   Example: Java, React, Graphic Designing, Quran Recitation, Arabic, etc.
 
-Adds skill description and expertise level.
+   Adds skill description and expertise level.
 
 3. Other students can view skills
 
-Students can see profiles and skills posted by others.
+    Students can see profiles and skills posted by others.
 
-Example: Faizan is expert in Java.
+    Example: Faizan is expert in Java.
 
 4. Student requests to learn
 
-A student clicks "Request to Learn".
+   A student clicks "Request to Learn".
 
-Sends a request to the skill owner.
+   Sends a request to the skill owner.
 
 5. Skill owner accepts or rejects
 
-If accepted, both students can connect.
+   If accepted, both students can connect.
 
-They can discuss teaching schedule and learning sessions.
+   They can discuss teaching schedule and learning sessions.
