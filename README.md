@@ -4,15 +4,6 @@ Project Overview
 
 The Skill Exchange Platform is a full-stack web application designed to connect individuals who want to trade skills. Users can list skills they are proficient in, discover skills they want to learn, find complementary matches, and manage trade proposals directly with other members.
 
-Tools and Technologies:
-
-Next.js (App Router)
-
-TypeScript
-
-Tailwind CSS
-
-Node.js and npm
 
 Features
 
@@ -43,3 +34,15 @@ Features
    If accepted, both students can connect.
 
    They can discuss teaching schedule and learning sessions.
+
+
+
+Tools and Technologies:
+
+Next.js (App Router)
+
+TypeScript
+
+Tailwind CSS
+
+Node.js and npm
