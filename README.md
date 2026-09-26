@@ -2,8 +2,7 @@ Skill Exchange Platform
 
 Project Overview
 
-The Skill Exchange Platform is a full-stack web application designed to connect individuals who want to trade skills. Users can list skills they are proficient in, discover skills they want to learn, find complementary matches, and manage trade proposals directly with other members.
-
+The Skill Exchange Platform is a web application where users can share their skills, find people with skills they want to learn, and exchange skills with each other.
 
 Features
 
@@ -17,7 +16,7 @@ Features
 
 3. Other students can view skills
 
-    Students can see profiles and skills posted by others.
+   Students can see profiles and skills posted by others.
 
 4. Student requests to learn
 
@@ -28,9 +27,6 @@ Features
 5. Skill owner accepts or rejects
 
    If accepted, both students can connect.
-
-
-
 
 Tools and Technologies:
 
